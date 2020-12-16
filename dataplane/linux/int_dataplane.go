@@ -136,6 +136,7 @@ type Config struct {
 	IptablesRefreshInterval        time.Duration
 	IptablesPostWriteCheckInterval time.Duration
 	IptablesInsertMode             string
+	IptablesInsertAtRuleNumber     int
 	IptablesLockFilePath           string
 	IptablesLockTimeout            time.Duration
 	IptablesLockProbeInterval      time.Duration
@@ -338,6 +339,7 @@ func NewIntDataplaneDriver(config Config) *InternalDataplane {
 	iptablesOptions := iptables.TableOptions{
 		HistoricChainPrefixes: rules.AllHistoricChainNamePrefixes,
 		InsertMode:            config.IptablesInsertMode,
+		InsertAtRuleNumber:    config.IptablesInsertAtRuleNumber,
 		RefreshInterval:       config.IptablesRefreshInterval,
 		PostWriteInterval:     config.IptablesPostWriteCheckInterval,
 		LockTimeout:           config.IptablesLockTimeout,

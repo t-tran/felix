@@ -242,6 +242,9 @@ type Table struct {
 	// to top-level chains.
 	insertMode string
 
+	// insertAtRuleNumber is the position we insert our rules at
+	insertAtRuleNumber int
+
 	// Record when we did our most recent reads and writes of the table.  We use these to
 	// calculate the next time we should force a refresh.
 	lastReadTime             time.Time
@@ -285,6 +288,7 @@ type TableOptions struct {
 	ExtraCleanupRegexPattern string
 	BackendMode              string
 	InsertMode               string
+	InsertAtRuleNumber       int
 	RefreshInterval          time.Duration
 	PostWriteInterval        time.Duration
 
@@ -357,6 +361,11 @@ func NewTable(
 	default:
 		log.WithField("insertMode", options.InsertMode).Panic("Unknown insert mode")
 	}
+	var insertAtRuleNumber int
+	insertAtRuleNumber = 1
+	if options.InsertAtRuleNumber > 0 {
+	        insertAtRuleNumber = options.InsertAtRuleNumber
+	}
 
 	if options.PostWriteInterval <= minPostWriteInterval {
 		log.WithFields(log.Fields{
@@ -405,6 +414,7 @@ func NewTable(
 		ourChainsRegexp:   ourChainsRegexp,
 		oldInsertRegexp:   oldInsertRegexp,
 		insertMode:        insertMode,
+		insertAtRuleNumber:        insertAtRuleNumber,
 
 		// Initialise the write tracking as if we'd just done a write, this will trigger
 		// us to recheck the dataplane at exponentially increasing intervals at startup.
@@ -727,6 +737,14 @@ func (t *Table) expectedHashesForInsertAppendChain(
 	if t.insertMode == "append" {
 		log.Debug("In append mode, returning our hashes at end.")
 		offset = numNonCalicoRules
+	}
+	if t.insertMode == "insert" {
+		log.Debug("In insert mode, checking if we need to insert our rules somewhere at the middle.")
+		if t.insertAtRuleNumber > numNonCalicoRules+1 {
+			offset = numNonCalicoRules
+		} else {
+			offset = t.insertAtRuleNumber-1
+		}
 	}
 	for i, hash := range ourInsertedHashes {
 		allHashes[i+offset] = hash
@@ -1184,11 +1202,17 @@ func (t *Table) applyUpdates() error {
 				// state of the chain.
 				for i := len(rules) - 1; i >= 0; i-- {
 					prefixFrag := t.commentFrag(newInsertedRuleHashes[i])
-					line := rules[i].RenderInsert(chainName, prefixFrag, features)
+					line := rules[i].RenderInsertAtRuleNumber(chainName, t.insertAtRuleNumber,  prefixFrag, features)
 					buf.WriteLine(line)
 					insertRuleLines[i] = line
 				}
-				newRules = append(insertRuleLines, newRules...)
+				if t.insertAtRuleNumber > len(rules)+1 {
+					// This is actually the same as "append" mode
+					newRules = append(newRules, insertRuleLines...)
+				} else {
+					newRules = append(newRules, insertRuleLines[(t.insertAtRuleNumber-1):]...)
+					newRules = append(insertRuleLines[:(t.insertAtRuleNumber-1)], newRules...)
+				}
 			} else {
 				t.logCxt.Debug("Rendering append rules.")
 				for i := 0; i < len(rules); i++ {
